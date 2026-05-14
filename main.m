@@ -17,6 +17,5 @@ run("data_gather.m")
 
 % DSDE (Dual-Stage Deep Ensemble) with 5-5 neural networks for remaining
 % error minimalization, and uncertainty prediction
-
-%run("TSDE_train.m")
-%run("TSDE_test.m")
+run("TSDE.m")
+run("test.m")
