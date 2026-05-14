@@ -1,4 +1,4 @@
-function x_next = dynamic(x, u, params, dt)
+function x_next = dynamic_model(x, u, params, dt)
     % Állapotok (x):
     % x(1) : X globális pozíció [m]
     % x(2) : Y globális pozíció [m]
