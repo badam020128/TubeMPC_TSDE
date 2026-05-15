@@ -1,7 +1,13 @@
+% Módosított dynamic_model.m
 function x_next = dynamic_model(x, u, params, dt)
-    % ODE45 beépített solver a numerikus felrobbanás elkerülésére
-    [~, X_res] = ode45(@(t, y) car_dynamics(t, y, u, params), [0, dt], x);
-    x_next = X_res(end, :)';
+    % Villámgyors kézi RK4 integrálás az ode45 helyett
+    k1 = car_dynamics(0, x,             u, params);
+    k2 = car_dynamics(0, x + 0.5*dt*k1, u, params);
+    k3 = car_dynamics(0, x + 0.5*dt*k2, u, params);
+    k4 = car_dynamics(0, x + dt*k3,     u, params);
+    
+    x_next = x + (dt/6) * (k1 + 2*k2 + 2*k3 + k4);
+    
     % Szigorúan rögzítjük a hosszirányú sebességet (Tempomat)
     x_next(4) = params.v_const;
 end
