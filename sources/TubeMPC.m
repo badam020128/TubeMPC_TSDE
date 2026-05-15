@@ -31,8 +31,14 @@ function u_applied = TubeMPC(x_meas, kappa_horizon, params, tsde_models, use_ai,
         rho = max(abs(eig(A - B * K_lqr_mat))); 
         
         % AI paraméterek betöltése és CasADi formátumba konvertálása
+        % AI paraméterek betöltése és CasADi formátumba konvertálása
         nn_data = struct();
         if ~isempty(tsde_models)
+            % --- JAVÍTÁS ITT ---
+            % Kiolvassuk, hány háló van a betöltött struktúrában
+            num_nets = length(tsde_models.ensemble_stage1);
+            nn_data.num_nets = num_nets; % Eltároljuk későbbre a nn_data-ba
+            
             nn_data.in_off = DM(tsde_models.in_settings.xoffset);
             nn_data.in_g   = DM(tsde_models.in_settings.gain);
             nn_data.in_ymin= DM(tsde_models.in_settings.ymin);
@@ -40,7 +46,8 @@ function u_applied = TubeMPC(x_meas, kappa_horizon, params, tsde_models, use_ai,
             nn_data.tar_g  = DM(tsde_models.tar_settings.gain);
             nn_data.tar_ymin= DM(tsde_models.tar_settings.ymin);
             
-            for i = 1:5
+            % Itt használjuk az imént kiolvasott num_nets-et!
+            for i = 1:num_nets
                 nn_data.W1{i} = DM(tsde_models.ensemble_stage1{i}.IW{1,1});
                 nn_data.b1{i} = DM(tsde_models.ensemble_stage1{i}.b{1});
                 nn_data.W2{i} = DM(tsde_models.ensemble_stage1{i}.LW{2,1});
@@ -76,7 +83,7 @@ function u_applied = TubeMPC(x_meas, kappa_horizon, params, tsde_models, use_ai,
                 nn_in = [x_k; u_k; kap_k];
                 in_norm = (nn_in - nn_data.in_off) .* nn_data.in_g + nn_data.in_ymin;
                 res_norm = 0;
-                for i = 1:5
+                for i = 1:nn_data.num_nets
                     a1 = tanh(nn_data.W1{i} * in_norm + nn_data.b1{i});
                     a2 = tanh(nn_data.W2{i} * a1      + nn_data.b2{i});
                     res_norm = res_norm + (nn_data.W3{i} * a2 + nn_data.b3{i});

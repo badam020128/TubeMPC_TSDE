@@ -3,7 +3,7 @@
 %  ------------------------------------------------------------
 %  A betanított 5+5 háló bírálata: hiba és Tube méret ellenőrzés.
 %% ============================================================
-clear; clc;
+%clear; clc;
 fprintf('--- TSDE Modell bírálat indítása ---\n');
 
 % 1. Adatok és modellek betöltése
@@ -23,11 +23,11 @@ true_residuals = R_train(:, idx_start:end);
 in_test_norm = mapminmax('apply', test_inputs, in_settings);
 
 % Tárolók az összes háló válaszának
-s1_raw = zeros(2, N_test, 5);
-s2_raw = zeros(2, N_test, 5);
+s1_raw = zeros(2, N_test, num_ensembles);
+s2_raw = zeros(2, N_test, num_ensembles);
 
 fprintf('Predikciók futtatása a 10 hálón...\n');
-for i = 1:5
+for i = 1:num_ensembles
     s1_raw(:,:,i) = ensemble_stage1{i}(in_test_norm);
     s2_raw(:,:,i) = ensemble_stage2{i}(in_test_norm);
 end

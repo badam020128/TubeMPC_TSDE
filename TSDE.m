@@ -1,7 +1,7 @@
 %% ============================================================
 %  OPTIMIZED TSDE TRAINING (TSDE_train.m) - FAST VERSION
 %% ============================================================
-clear; clc;
+%clear; clc;
 load('tsde_training_data.mat'); 
 
 % --- 1. Adatok előkészítése ---
@@ -12,7 +12,7 @@ targets = R_train;
 [in_norm, in_settings] = mapminmax(inputs);
 [tar_norm, tar_settings] = mapminmax(targets);
 
-num_ensembles = 5;
+num_ensembles = 4;
 ensemble_stage1 = cell(num_ensembles, 1);
 ensemble_stage2 = cell(num_ensembles, 1);
 
@@ -58,5 +58,5 @@ t2 = toc;
 fprintf('Stage 2 kész. Idő: %.2f másodperc.\n', t2);
 
 % --- 4. Mentés ---
-save('tsde_models.mat', 'ensemble_stage1', 'ensemble_stage2', 'in_settings', 'tar_settings');
+save('tsde_models.mat', 'ensemble_stage1', 'ensemble_stage2', 'in_settings', 'tar_settings', 'num_ensembles');
 disp('Sikeres mentés: tsde_models.mat');

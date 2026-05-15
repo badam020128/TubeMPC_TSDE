@@ -10,7 +10,7 @@ disp('--- Adatgyűjtés indítása: Nominális vs. Dinamikai modell ---');
 % --- Szimulációs és Jármű paraméterek ---
 N_data = 50000; % 500k minta a robusztus tanításhoz
 dt = 0.1;        % Mintavételi idő [s]
-v_const = 10.0;  % Sebesség [m/s]
+params.v_const = 10.0;  % Sebesség [m/s]
 L = 2.5;         % Tengelytáv [m]
 
 % Dinamikai paraméterek a dynamic_model.m-hez (Ground Truth)
