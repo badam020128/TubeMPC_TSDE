@@ -1,7 +1,7 @@
 %% ============================================================
 %  TSDE TESTING & UNCERTAINTY ANALYSIS (TSDE_test.m)
 %  ------------------------------------------------------------
-%  A betanított 5+5 háló bírálata: hiba és Tube méret ellenőrzés.
+%  A betanított háló bírálata: hiba és Tube méret ellenőrzés.
 %% ============================================================
 %clear; clc;
 fprintf('--- TSDE Modell bírálat indítása ---\n');
@@ -10,7 +10,7 @@ fprintf('--- TSDE Modell bírálat indítása ---\n');
 if ~exist('tsde_models.mat', 'file') || ~exist('tsde_training_data.mat', 'file')
     error('Hiányzó adatok! Futtasd a data_gather.m és TSDE_train.m scripteket.');
 end
-load('tsde_models.mat'); % ensemble_stage1, ensemble_stage2, in_settings, tar_settings
+load('tsde_models.mat'); % ensemble_stage1, ensemble_stage2, in_settings, tar_settings, num_ensembles
 load('tsde_training_data.mat'); 
 
 % Teszteljünk egy friss adathalmazon (vagy a tanítóadatok végén)
@@ -22,11 +22,13 @@ true_residuals = R_train(:, idx_start:end);
 % 2. PREDIKCIÓ AZ EGYÜTTESSEL (Ensemble)
 in_test_norm = mapminmax('apply', test_inputs, in_settings);
 
-% Tárolók az összes háló válaszának
+% Tárolók az összes háló válaszának (Dinamikusan)
 s1_raw = zeros(2, N_test, num_ensembles);
 s2_raw = zeros(2, N_test, num_ensembles);
 
-fprintf('Predikciók futtatása a 10 hálón...\n');
+% Javított kiíratás
+fprintf('Predikciók futtatása a %d hálón...\n', num_ensembles);
+
 for i = 1:num_ensembles
     s1_raw(:,:,i) = ensemble_stage1{i}(in_test_norm);
     s2_raw(:,:,i) = ensemble_stage2{i}(in_test_norm);
@@ -34,15 +36,15 @@ end
 
 % Stage 1: Átlagos hiba becslése
 mean_res_norm = mean(s1_raw, 3);
+
 % Stage 2: Bizonytalanság (Stage 2 átlaga + Stage 1 hálók szórása)
-% Ez adja meg a Tube (cső) falait.
 uncertainty_norm = mean(s2_raw, 3) + std(s1_raw, 0, 3);
 
 % Visszatranszformálás fizikai mértékegységekre
 mean_res = mapminmax('reverse', mean_res_norm, tar_settings);
-% Bizonytalanság skálázása (közelítőleg a tartomány fele)
-unc_scale = (tar_settings.ymax - tar_settings.ymin) / 2;
-uncertainty = uncertainty_norm .* unc_scale;
+
+% KRITIKUS JAVÍTÁS: Bizonytalanság (távolság) visszaskálázása fizikai értékre
+uncertainty = uncertainty_norm ./ tar_settings.gain;
 
 % 3. STATISZTIKAI BÍRÁLAT
 original_error = vecnorm(true_residuals);

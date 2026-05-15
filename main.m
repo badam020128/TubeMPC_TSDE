@@ -15,7 +15,12 @@ run("path_define.m")
 % purposes for further ML training
 run("data_gather.m")
 
-% DSDE (Dual-Stage Deep Ensemble) with 5-5 neural networks for remaining
+% TSDE (Two-Stage Deep Ensemble) with 5-5 neural networks for remaining
 % error minimalization, and uncertainty prediction
 run("TSDE.m")
-run("test.m")
+
+% reference path define for the controller
+run("path_define.m")
+
+
+run("simulate.m")
