@@ -48,8 +48,12 @@ for i = 1:N_data
     % JAVÍTÁS 1: Kezdeti szögsebesség megadása (steady-state cornering)
     omega_init = params.v_const * kappa; 
     
+    % JAVÍTOTT kód a data_gather.m-ben:
+    beta_approx = params.l_r * kappa; % Kúszásszög közelítés
+    v_y_init = params.v_const * beta_approx; 
+
     % Kezdőállapot: [X; Y; psi; v_x; v_y; omega]
-    x_dyn_init = [0; e_y; e_psi; params.v_const; 0; omega_init];
+    x_dyn_init = [0; e_y; e_psi; params.v_const; v_y_init; omega_init];;
     
     % Meghívjuk a valós Pacejka dinamikai modellt
     x_dyn_next = dynamic_model(x_dyn_init, [delta; 0], params, dt);
