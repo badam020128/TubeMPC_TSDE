@@ -8,8 +8,6 @@
 %  Note           : Run this file directly.
 %% ============================================================
 clear;
-% reference path define for the controller
-run("path_define.m")
 
 % run tube MPC for previously defined reference path for data gathering
 % purposes for further ML training
@@ -20,7 +18,7 @@ run("data_gather.m")
 run("TSDE.m")
 
 % reference path define for the controller
-run("path_define.m")
+%run("path_define.m")
 
 
 run("simulate.m")

@@ -21,7 +21,7 @@ params.pacejka_D = 1.0; params.pacejka_E = 0.97;
 
 % 1. NOMINÁLIS MODELL INICIALIZÁLÁSA
 % Megkapjuk az MPC által használt A, B, G mátrixokat
-[A, B, G] = nominal_model(v_const, L, dt);
+[A, B, G] = nominal_model(params.v_const, L, dt);
 
 % --- Adattárolók előkészítése ---
 X_train = zeros(2, N_data); % Bemenet: [e_y; e_psi]
@@ -48,7 +48,7 @@ for i = 1:N_data
     % 3. DINAMIKAI LÉPÉS (A valódi fizika)
     % A hibaállapotot globális állapotba transzformáljuk a szimulációhoz
     % Feltételezés: X=0, v_x=v_const, v_y=0 (oldalirányú csúszás nélkül indul)
-    x_dyn_init = [0; e_y; e_psi; v_const; 0; 0];
+    x_dyn_init = [0; e_y; e_psi; params.v_const; 0; 0];
     
     % Meghívjuk a valós dinamikai modellt (gyorsulás a_x = 0)
     x_dyn_next = dynamic_model(x_dyn_init, [delta; 0], params, dt);
@@ -57,7 +57,7 @@ for i = 1:N_data
     % e_y_next = Y pozíció; e_psi_next = psi - pálya_szöge
     % A pálya iránya dt alatt annyit változik, amennyit a kanyar "fordul": v*kappa*dt
     e_y_next_true   = x_dyn_next(2);
-    e_psi_next_true = x_dyn_next(3) - (v_const * kappa * dt);
+    e_psi_next_true = x_dyn_next(3) - (params.v_const * kappa * dt);
     x_next_true = [e_y_next_true; e_psi_next_true];
     
     % 4. MARADÉK HIBA (RESIDUAL) KISZÁMÍTÁSA
