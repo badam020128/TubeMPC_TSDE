@@ -69,9 +69,9 @@ function u_applied = TubeMPC(x_meas, kappa_horizon, params, tsde_models, use_ai,
         vars.u_prev = opti.parameter(1, 1); 
         
         % --- Optimalizációs célfüggvény és kényszerek ---
-        Q_mpc = DM(diag([20, 2])); 
+        Q_mpc = DM(diag([10, 20])); 
         R_mpc = DM(0.5);
-        R_dU_mpc = DM(5.0); 
+        R_dU_mpc = DM(100); 
         J = 0;
         
         for k = 1:Np
@@ -94,7 +94,13 @@ function u_applied = TubeMPC(x_meas, kappa_horizon, params, tsde_models, use_ai,
                 residual = [0; 0];
             end
             
-            opti.subject_to(vars.X(:,k+1) == x_lin + vars.p_ai * residual);
+            % --- IDE KERÜL A JAVÍTÁS ---
+            % AI Residual korrekció súlyozása
+            ai_weight = 0.4; % Csak 40%-ban engedjük érvényesülni az AI jóslatát
+            
+            % Dinamikai kényszer az AI-val korrigálva (ez volt a 109. sor)
+            opti.subject_to(vars.X(:,k+1) == x_lin + vars.p_ai * ai_weight * residual);
+            % ---------------------------
             opti.subject_to(vars.S(k+1) == rho^2 * vars.S(k) + vars.p_dmax^2);
 
             S_safe = fmax(vars.S(k+1), 1e-6);
@@ -127,6 +133,7 @@ function u_applied = TubeMPC(x_meas, kappa_horizon, params, tsde_models, use_ai,
         opts.print_time = 0;
         opts.ipopt.hessian_approximation = 'limited-memory'; 
         opts.ipopt.max_iter = 100;
+        opts.ipopt.tol = 1e-3;
         
         opti.solver('ipopt', opts);
     end
@@ -137,7 +144,7 @@ function u_applied = TubeMPC(x_meas, kappa_horizon, params, tsde_models, use_ai,
     opti.set_value(vars.x_meas, x_meas(:)); 
     opti.set_value(vars.x_nom_prev, x_nom_prev(:)); % Átadjuk az előző lépés nominális állapotát
     opti.set_value(vars.kappa,  kappa_horizon(:)'); 
-    opti.set_value(vars.p_ai,   use_ai);
+    opti.set_value(vars.p_ai,   use_ai*0.6);
     opti.set_value(vars.p_dmax, d_max);
     opti.set_value(vars.u_prev, u_prev_val);
     
