@@ -34,34 +34,42 @@ disp('Véletlenszerű mintavételezés a tartományban...');
 % --- Adatgeneráló Ciklus ---
 for i = 1:N_data
     % 1. Véletlenszerű állapotok és pályagörbület sorsolása
-    e_y   = -6.0 + 12.0 * rand();   % e_y   range: [-6, 6] m
-    e_psi = -0.8 + 1.6 * rand();    % e_psi range: [-0.8, 0.8] rad
-    delta = -0.6 + 1.2 * rand();    % delta range: [-0.6, 0.6] rad
-    kappa = -0.4 + 0.8 * rand();    % kappa range: [-0.4, 0.4] 1/m
+    e_y   = -6.0 + 12.0 * rand();   
+    e_psi = -0.8 + 1.6 * rand();    
+    delta = -0.6 + 1.2 * rand();    
+    kappa = -0.4 + 0.8 * rand();    
     
     x_curr = [e_y; e_psi];
     
     % 2. NOMINÁLIS LÉPÉS (Lineáris jóslat)
-    % Ez az, amit az "egyszerű" szabályozó várna
     x_next_nom = A * x_curr + B * delta + G * kappa;
     
     % 3. DINAMIKAI LÉPÉS (A valódi fizika)
-    % A hibaállapotot globális állapotba transzformáljuk a szimulációhoz
-    % Feltételezés: X=0, v_x=v_const, v_y=0 (oldalirányú csúszás nélkül indul)
-    x_dyn_init = [0; e_y; e_psi; params.v_const; 0; 0];
+    % JAVÍTÁS 1: Kezdeti szögsebesség megadása (steady-state cornering)
+    omega_init = params.v_const * kappa; 
     
-    % Meghívjuk a valós dinamikai modellt (gyorsulás a_x = 0)
+    % Kezdőállapot: [X; Y; psi; v_x; v_y; omega]
+    x_dyn_init = [0; e_y; e_psi; params.v_const; 0; omega_init];
+    
+    % Meghívjuk a valós Pacejka dinamikai modellt
     x_dyn_next = dynamic_model(x_dyn_init, [delta; 0], params, dt);
     
+    % JAVÍTÁS 2: A referenciapálya eltolódásának figyelembevétele
+    % (Az út kanyarodik el a kocsi alól, nem csak a kocsi mozog)
+    ds = params.v_const * dt; 
+    if abs(kappa) > 1e-5
+        Y_ref_shift = (1/kappa) * (1 - cos(kappa * ds));
+    else
+        Y_ref_shift = 0;
+    end
+    
     % Visszatranszformálás hibaállapotba
-    % e_y_next = Y pozíció; e_psi_next = psi - pálya_szöge
-    % A pálya iránya dt alatt annyit változik, amennyit a kanyar "fordul": v*kappa*dt
-    e_y_next_true   = x_dyn_next(2);
+    e_y_next_true   = x_dyn_next(2) - Y_ref_shift; 
     e_psi_next_true = x_dyn_next(3) - (params.v_const * kappa * dt);
     x_next_true = [e_y_next_true; e_psi_next_true];
     
     % 4. MARADÉK HIBA (RESIDUAL) KISZÁMÍTÁSA
-    % Ezt a "szakadékot" fogja a neurális háló befoltozni
+    % Ezt a tiszta fizikát fogja tanulni az AI
     residual = x_next_true - x_next_nom;
     
     % 5. Adatok eltárolása
@@ -70,8 +78,7 @@ for i = 1:N_data
     K_train(i)    = kappa;
     R_train(:, i) = residual;
     
-    % Progress bar (opcionális)
-    if mod(i, 100000) == 0, fprintf('%d/500k pont kész...\n', i); end
+    if mod(i, 10000) == 0, fprintf('%d/50000 pont kész...\n', i); end
 end
 
 % --- Adatok kimentése ---
