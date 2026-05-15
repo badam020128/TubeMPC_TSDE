@@ -1,68 +1,37 @@
 function x_next = dynamic_model(x, u, params, dt)
-    % Állapotok (x):
-    % x(1) : X globális pozíció [m]
-    % x(2) : Y globális pozíció [m]
-    % x(3) : psi (jármű irányszöge) [rad]
-    % x(4) : v_x (hosszirányú sebesség) [m/s]
-    % x(5) : v_y (keresztirányú sebesség) [m/s]
-    % x(6) : omega (perdület / yaw rate) [rad/s]
-    
-    % Bemenetek (u):
-    % u(1) : delta (első kerék kormányszöge) [rad]
-    % u(2) : a_x (hosszirányú gyorsulás/fékezés) [m/s^2]
-    
-    % Paraméterek (params struct):
-    m = params.m;       % Jármű tömege [kg]
-    I_z = params.I_z;   % Tehetetlenségi nyomaték Z tengelyre [kg*m^2]
-    l_f = params.l_f;   % Súlypont távolsága az első tengelytől [m]
-    l_r = params.l_r;   % Súlypont távolsága a hátsó tengelytől [m]
-    
-    % Pacejka paraméterek (egyszerűsített Magic Formula: F_y = D * sin(C * atan(B * alpha)))
-    B = params.pacejka_B; % Stiffness factor
-    C = params.pacejka_C; % Shape factor
-    D = params.pacejka_D; % Peak value (tapadási határ)
-    E = params.pacejka_E; % Curvature factor
-    
-    % Állapotváltozók kibontása
-    psi = x(3);
-    v_x = max(x(4), 0.1); % Szingularitás elkerülése kis sebességnél
-    v_y = x(5);
-    omega = x(6);
-    
+    % ODE45 beépített solver a numerikus felrobbanás elkerülésére
+    [~, X_res] = ode45(@(t, y) car_dynamics(t, y, u, params), [0, dt], x);
+    x_next = X_res(end, :)';
+    % Szigorúan rögzítjük a hosszirányú sebességet (Tempomat)
+    x_next(4) = params.v_const;
+end
+
+function dx = car_dynamics(~, x_curr, u, params)
+    psi = x_curr(3);
+    v_x = params.v_const; % FIX: Szigorúan konstans sebesség!
+    v_y = x_curr(5);
+    omega = x_curr(6);
     delta = u(1);
-    a_x = u(2);
-    
-    %% 1. Csúszási szögek (Slip angles) számítása
-    % Első csúszási szög
-    alpha_f = atan((v_y + l_f * omega) / v_x) - delta;
-    % Hátsó csúszási szög
-    alpha_r = atan((v_y - l_r * omega) / v_x);
-    
-    %% 2. Oldalirányú erők számítása (Pacejka Magic Formula)
+
+    % Helyes kormányszög előjel (A pozitív delta balra visz)
+    alpha_f = delta - atan((v_y + params.l_f * omega) / v_x);
+    alpha_r = -atan((v_y - params.l_r * omega) / v_x);
+
+    % Pacejka Magic Formula
+    B = params.pacejka_B; C = params.pacejka_C;
+    D = params.pacejka_D; E = params.pacejka_E;
+
     F_yf = D * sin(C * atan(B * alpha_f - E * (B * alpha_f - atan(B * alpha_f))));
     F_yr = D * sin(C * atan(B * alpha_r - E * (B * alpha_r - atan(B * alpha_r))));
-    
-    %% 3. Jármű dinamikai differenciálegyenletei
-    % Hosszirányú gyorsulás (v_x dot) - egyszerűsített kinematikai közelítés a hajtásra
-    dv_x = a_x - omega * v_y; 
-    
-    % Keresztirányú gyorsulás (v_y dot)
-    dv_y = (F_yf * cos(delta) + F_yr) / m - omega * v_x;
-    
-    % Szöggyorsulás (omega dot)
-    domega = (l_f * F_yf * cos(delta) - l_r * F_yr) / I_z;
-    
-    % Globális koordináták differenciálegyenletei
+
+    % Keresztirányú és forgó mozgás (Hosszirányú gyorsulás 0)
+    dv_x = 0; 
+    dv_y = (F_yf * cos(delta) + F_yr) / params.m - omega * v_x;
+    domega = (params.l_f * F_yf * cos(delta) - params.l_r * F_yr) / params.I_z;
+
     dX = v_x * cos(psi) - v_y * sin(psi);
     dY = v_x * sin(psi) + v_y * cos(psi);
     dpsi = omega;
-    
-    %% 4. Numerikus integrálás (Euler-módszer a példa kedvéért, de lehet RK4 is)
-    x_next = zeros(6,1);
-    x_next(1) = x(1) + dX * dt;
-    x_next(2) = x(2) + dY * dt;
-    x_next(3) = x(3) + dpsi * dt;
-    x_next(4) = x(4) + dv_x * dt;
-    x_next(5) = x(5) + dv_y * dt;
-    x_next(6) = x(6) + domega * dt;
+
+    dx = [dX; dY; dpsi; dv_x; dv_y; domega];
 end
