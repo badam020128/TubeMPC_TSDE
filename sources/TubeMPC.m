@@ -71,7 +71,7 @@ function u_applied = TubeMPC(x_meas, kappa_horizon, params, tsde_models, use_ai,
         % --- Optimalizációs célfüggvény és kényszerek ---
         Q_mpc = DM(diag([10, 20])); 
         R_mpc = DM(0.5);
-        R_dU_mpc = DM(100); 
+        R_dU_mpc = DM(500); 
         J = 0;
         
         for k = 1:Np
