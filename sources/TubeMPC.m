@@ -69,9 +69,9 @@ function u_applied = TubeMPC(x_meas, kappa_horizon, params, tsde_models, use_ai,
         vars.u_prev     = opti.parameter(1, 1); 
         
         % --- Célfüggvény és kényszerek ---
-        Q_mpc = DM(diag([10, 20])); 
-        R_mpc = DM(0.5);
-        R_dU_mpc = DM(500); 
+        Q_mpc = DM(diag([40, 10])); 
+        R_mpc = DM(1.0);
+        R_dU_mpc = DM(200); 
         J = 0;
         
         for k = 1:Np
@@ -94,7 +94,7 @@ function u_applied = TubeMPC(x_meas, kappa_horizon, params, tsde_models, use_ai,
                 
                 % STABILITÁSI JAVÍTÁS 1: Az AI maradékhiba csillapítása. 
                 % Csak 20%-os súllyal engedjük módosítani a predikciót lépésenként.
-                ai_weight = 0.2; 
+                ai_weight = 0.8; 
             else
                 residual = [0; 0];
                 ai_weight = 0.0;

@@ -10,7 +10,7 @@ disp('--- Adatgyűjtés indítása: Nominális vs. Dinamikai modell ---');
 % --- Szimulációs és Jármű paraméterek ---
 N_data = 50000; % 500k minta a robusztus tanításhoz
 dt = 0.1;        % Mintavételi idő [s]
-params.v_const = 10.0;  % Sebesség [m/s]
+params.v_const = 6.0;  % Sebesség [m/s]
 L = 2.5;         % Tengelytáv [m]
 
 % Dinamikai paraméterek a dynamic_model.m-hez (Ground Truth)
@@ -58,18 +58,26 @@ for i = 1:N_data
     % Meghívjuk a valós Pacejka dinamikai modellt
     x_dyn_next = dynamic_model(x_dyn_init, [delta; 0], params, dt);
     
-    % JAVÍTÁS 2: A referenciapálya eltolódásának figyelembevétele
-    % (Az út kanyarodik el a kocsi alól, nem csak a kocsi mozog)
+    % JAVÍTÁS 2: A referenciapálya eltolódásának és forgásának precíz figyelembevétele
     ds = params.v_const * dt; 
+    psi_ref_next = params.v_const * kappa * dt; % A pálya új irányszöge
+
     if abs(kappa) > 1e-5
+        X_ref_shift = (1/kappa) * sin(kappa * ds);
         Y_ref_shift = (1/kappa) * (1 - cos(kappa * ds));
     else
+        X_ref_shift = ds;
         Y_ref_shift = 0;
     end
-    
-    % Visszatranszformálás hibaállapotba
-    e_y_next_true   = x_dyn_next(2) - Y_ref_shift; 
-    e_psi_next_true = x_dyn_next(3) - (params.v_const * kappa * dt);
+
+    % Távolság a globális keretben az ÚJ kanyarodó referenciaponttól
+    dx = x_dyn_next(1) - X_ref_shift;
+    dy = x_dyn_next(2) - Y_ref_shift;
+
+    % Visszatranszformálás a VALÓS Frenet hibaállapotba (forgatás a pálya szögével)
+    e_y_next_true   = -sin(psi_ref_next) * dx + cos(psi_ref_next) * dy; 
+    e_psi_next_true = wrapToPi(x_dyn_next(3) - psi_ref_next);
+
     x_next_true = [e_y_next_true; e_psi_next_true];
     
     % 4. MARADÉK HIBA (RESIDUAL) KISZÁMÍTÁSA

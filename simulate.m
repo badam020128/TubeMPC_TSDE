@@ -18,7 +18,7 @@ tsde_models = load('tsde_models.mat');
 
 % --- Fizikai paraméterek ---
 params.dt = 0.1;
-params.v_const = 5.0; % Sebesség 5 m/s
+params.v_const = 6.0; % Sebesség 5 m/s
 params.L = 2.5;
 params.m = 1500; params.I_z = 3000;
 params.l_f = 1.2; params.l_r = 1.3;
