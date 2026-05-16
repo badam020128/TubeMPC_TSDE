@@ -17,7 +17,7 @@ L = 2.5;         % Tengelytáv [m]
 params.m = 1500; params.I_z = 3000;
 params.l_f = 1.2; params.l_r = 1.3;
 params.pacejka_B = 10; params.pacejka_C = 1.9;
-params.pacejka_D = 1.0; params.pacejka_E = 0.97;
+params.pacejka_D = 1.0 * (params.m * 9.81 / 2); params.pacejka_E = 0.97;
 
 % 1. NOMINÁLIS MODELL INICIALIZÁLÁSA
 % Megkapjuk az MPC által használt A, B, G mátrixokat
