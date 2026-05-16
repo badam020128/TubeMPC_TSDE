@@ -36,8 +36,8 @@ y_ref = interp1(S_raw, y_raw, S_sim, 'linear');
 psi_ref = unwrap(atan2(gradient(y_ref), gradient(x_ref))); 
 kappa_ref = gradient(psi_ref) ./ s_step;
 
-N_sim = length(x_ref) - 20;
 Np = 15; % Predikciós horizont
+N_sim = length(x_ref) - 20;
 
 % ========================================================
 %  2. SZIMULÁCIÓK FUTTATÁSA
@@ -60,8 +60,24 @@ for s = 1:2
     x_curr = [0; 0];
     x_dyn_global = [x_ref(1); y_ref(1); psi_ref(1); params.v_const; 0; 0];
     
+    % JAVÍTÁS: Keresési index inicializálása
+    curr_idx = 1;
+    
     for k = 1:N_sim
-        kappa_seq = kappa_ref(k : k+Np-1); % Horizont kivágása
+        
+        % JAVÍTÁS: Keresd meg a járműhöz legközelebbi pontot a pályán!
+        % Keresési ablak, hogy ne kelljen az egész pályát átnyálazni (gyorsítás)
+        search_window_end = min(curr_idx + 50, length(x_ref) - Np);
+        search_window = curr_idx : search_window_end;
+        
+        % Távolság négyzetének számítása
+        dist_sq = (x_ref(search_window) - x_dyn_global(1)).^2 + ...
+                  (y_ref(search_window) - x_dyn_global(2)).^2;
+        [~, local_min_idx] = min(dist_sq);
+        curr_idx = search_window(local_min_idx); % Frissítjük a legközelebbi pont indexét
+        
+        % A predikciós horizont is innen induljon!
+        kappa_seq = kappa_ref(curr_idx : curr_idx+Np-1); 
         
         % *** JAVÍTÁS: Csak akkor adjuk át a hálót, ha kell! ***
         if scenarios{s}.use_ai == 1
@@ -73,16 +89,16 @@ for s = 1:2
         % TUBE MPC FÜGGVÉNY HÍVÁSA!
         u_applied = TubeMPC(x_curr, kappa_seq, params, models_to_pass, scenarios{s}.use_ai, scenarios{s}.d_max);
         
-        % ... többi kód változatlan
-        
         % Fizikai léptetés
         x_dyn_global = dynamic_model(x_dyn_global, [u_applied; 0], params, params.dt);
         
-        % Hibák visszaszámolása
-        dx = x_dyn_global(1) - x_ref(k+1);
-        dy = x_dyn_global(2) - y_ref(k+1);
-        e_y = -sin(psi_ref(k+1))*dx + cos(psi_ref(k+1))*dy; 
-        e_psi = wrapToPi(x_dyn_global(3) - psi_ref(k+1));
+        % JAVÍTÁS: Helyes, geometriai hiba visszaszámolása a legközelebbi ponthoz
+        dx = x_dyn_global(1) - x_ref(curr_idx);
+        dy = x_dyn_global(2) - y_ref(curr_idx);
+        
+        % Laterális hiba a Frenet keretben
+        e_y = -sin(psi_ref(curr_idx))*dx + cos(psi_ref(curr_idx))*dy; 
+        e_psi = wrapToPi(x_dyn_global(3) - psi_ref(curr_idx));
         
         x_curr = [e_y; e_psi];
         
