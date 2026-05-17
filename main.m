@@ -7,7 +7,7 @@
 %  Description    : Main execution script that calls the required submodules and processing steps.
 %  Note           : Run this file directly.
 %% ============================================================
-clear; clc;
+%clear; clc;
 
 % run tube MPC for previously defined reference path for data gathering
 % purposes for further ML training
@@ -18,7 +18,7 @@ run("data_gather.m")
 run("TSDE.m")
 
 % reference path define for the controller
-run("path_define.m")
+%run("path_define.m")
 
 % run the simulation for regular TubeMPC and TSDE TubeMPC
 run("simulate.m")

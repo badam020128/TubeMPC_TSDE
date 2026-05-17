@@ -7,7 +7,7 @@ function u_applied = TubeMPC(x_meas, kappa_horizon, params, ai_residual, d_max)
     import casadi.*
     Np = 15; % Predikciós horizont
     max_ey = 3.0; % Útpálya szélessége (maximális megengedett laterális hiba [m])
-    dU_max = 0.3; % Kormányzási sebesség korlát: max 0.3 rad / lépés
+    dU_max = 0.2; % Kormányzási sebesség korlát: max 0.3 rad / lépés
     
     if isempty(u_prev_val)
         u_prev_val = 0;
@@ -48,9 +48,9 @@ function u_applied = TubeMPC(x_meas, kappa_horizon, params, ai_residual, d_max)
         
         % --- Célfüggvény és kényszerek ---
         % Mivel az AI stabil, visszatérhetünk normális súlyokra:
-        Q_mpc = DM(diag([100, 20])); % Erős sávtartás
-        R_mpc = DM(1.0);             % Finom kormányszög büntetés
-        R_dU_mpc = DM(50);           % Normális kormányszervó
+        Q_mpc = DM(diag([50, 20])); % Erős sávtartás
+        R_mpc = DM(20);             % Finom kormányszög büntetés
+        R_dU_mpc = DM(200);           % Normális kormányszervó
         J = 0;
         
         for k = 1:Np
