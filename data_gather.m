@@ -8,7 +8,7 @@
 disp('--- Adatgyűjtés indítása: Nominális vs. Dinamikai modell ---');
 
 % --- Szimulációs és Jármű paraméterek ---
-N_data = 50000; % 500k minta a robusztus tanításhoz
+N_data = 50000; % 50k a teszthez, éles tréninghez 500k is ajánlott lehet
 dt = 0.1;        % Mintavételi idő [s]
 params.v_const = 6.0;  % Sebesség [m/s]
 L = 2.5;         % Tengelytáv [m]
@@ -19,46 +19,73 @@ params.l_f = 1.2; params.l_r = 1.3;
 params.pacejka_B = 10; params.pacejka_C = 1.9;
 params.pacejka_D = 1.0 * (params.m * 9.81 / 2); params.pacejka_E = 0.97;
 
-% 1. NOMINÁLIS MODELL INICIALIZÁLÁSA
+% 1. NOMINÁLIS MODELL ÉS LQR SZABÁLYOZÓ INICIALIZÁLÁSA
 % Megkapjuk az MPC által használt A, B, G mátrixokat
 [A, B, G] = nominal_model(params.v_const, L, dt);
 
+% Kiszámolunk egy bázis LQR szabályozót a mintavételezéshez
+% Ugyanazokkal a súlyokkal, mint a TubeMPC.m-ben (Q=[10, 5], R=1)
+Q_lqr = diag([10, 5]); 
+R_lqr = 1;
+[K_lqr_mat, ~, ~] = dlqr(A, B, Q_lqr, R_lqr);
+K_lqr = -K_lqr_mat; % Kormányszög = K_lqr * x
+
 % --- Adattárolók előkészítése ---
 X_train = zeros(2, N_data); % Bemenet: [e_y; e_psi]
-U_train = zeros(1, N_data); % Bemenet: [delta]
+U_train = zeros(1, N_data); % Bemenet: [delta] (A tényleges kormányszög!)
 K_train = zeros(1, N_data); % Bemenet: [kappa]
 R_train = zeros(2, N_data); % Cél (Residual): Dinamikus - Nominális
 
-disp('Véletlenszerű mintavételezés a tartományban...');
+disp('Intelligens (LQR-vezérelt + Kevert eloszlású) mintavételezés...');
 
 % --- Adatgeneráló Ciklus ---
 for i = 1:N_data
-    % 1. Véletlenszerű állapotok és pályagörbület sorsolása
-    e_y   = -6.0 + 12.0 * rand();   
-    e_psi = -0.8 + 1.6 * rand();    
-    delta = -0.6 + 1.2 * rand();    
-    kappa = -0.4 + 0.8 * rand();    
+    % 1. KEVERT ÁLLAPOT-MINTAVÉTELEZÉS (70% Gauss, 30% Uniform)
+    if rand() < 0.7
+        % Normál üzem (sűrűbb mintavétel a sáv közepe és kis szögek körül)
+        e_y   = 0.5 * randn(); 
+        e_psi = 0.1 * randn(); 
+        kappa = 0.05 * randn(); 
+    else
+        % Extrém helyzetek (hogy a háló robusztus maradjon a határokon is)
+        e_y   = -4.0 + 8.0 * rand();
+        e_psi = -0.5 + 1.0 * rand();
+        kappa = -0.222 + 0.444 * rand(); % max_kappa = ~8.0 / v^2 = 0.222
+    end
+    
+    % Biztonsági vágás (Clipping), hogy a randn extrémjei se borítsák fel a Pacejkát
+    e_y   = max(min(e_y, 4.0), -4.0);
+    e_psi = max(min(e_psi, 0.5), -0.5);
+    kappa = max(min(kappa, 0.222), -0.222); 
     
     x_curr = [e_y; e_psi];
     
-    % 2. NOMINÁLIS LÉPÉS (Lineáris jóslat)
+    % 2. ZÁRT HURKÚ (LQR) KORMÁNYZÁS + GAUSS ZAJ (Exploration)
+    delta_ff = L * kappa;                 % Ideális ív kormányszöge (Feedforward)
+    delta_fb = K_lqr * x_curr;            % Hiba korrekció (Feedback)
+    
+    % Gauss-zaj a valósághű zavarások modellezéséhez (Szórás: 0.05 rad)
+    delta_noise = 0.05 * randn();         
+    
+    delta = delta_ff + delta_fb + delta_noise;
+    delta = max(-0.5, min(0.5, delta));   % Szaturáció a fizikai korlátra
+    
+    % 3. NOMINÁLIS LÉPÉS (Lineáris jóslat)
     x_next_nom = A * x_curr + B * delta + G * kappa;
     
-    % 3. DINAMIKAI LÉPÉS (A valódi fizika)
-    % JAVÍTÁS 1: Kezdeti szögsebesség megadása (steady-state cornering)
+    % 4. DINAMIKAI LÉPÉS (A valódi fizika)
+    % Kezdeti szögsebesség és kúszásszög beállítása (steady-state cornering)
     omega_init = params.v_const * kappa; 
-    
-    % JAVÍTOTT kód a data_gather.m-ben:
-    beta_approx = params.l_r * kappa; % Kúszásszög közelítés
+    beta_approx = params.l_r * kappa; 
     v_y_init = params.v_const * beta_approx; 
 
     % Kezdőállapot: [X; Y; psi; v_x; v_y; omega]
-    x_dyn_init = [0; e_y; e_psi; params.v_const; v_y_init; omega_init];;
+    x_dyn_init = [0; e_y; e_psi; params.v_const; v_y_init; omega_init];
     
     % Meghívjuk a valós Pacejka dinamikai modellt
     x_dyn_next = dynamic_model(x_dyn_init, [delta; 0], params, dt);
     
-    % JAVÍTÁS 2: A referenciapálya eltolódásának és forgásának precíz figyelembevétele
+    % 5. REFERENCIA PÁLYA ELTOLÓDÁSÁNAK SZÁMÍTÁSA
     ds = params.v_const * dt; 
     psi_ref_next = params.v_const * kappa * dt; % A pálya új irányszöge
 
@@ -80,17 +107,16 @@ for i = 1:N_data
 
     x_next_true = [e_y_next_true; e_psi_next_true];
     
-    % 4. MARADÉK HIBA (RESIDUAL) KISZÁMÍTÁSA
-    % Ezt a tiszta fizikát fogja tanulni az AI
+    % 6. MARADÉK HIBA (RESIDUAL) KISZÁMÍTÁSA
     residual = x_next_true - x_next_nom;
     
-    % 5. Adatok eltárolása
+    % 7. Adatok eltárolása (A TÉNYLEGES delta kerül mentésre!)
     X_train(:, i) = x_curr;
-    U_train(:, i) = delta;
+    U_train(:, i) = delta; 
     K_train(i)    = kappa;
     R_train(:, i) = residual;
     
-    if mod(i, 10000) == 0, fprintf('%d/50000 pont kész...\n', i); end
+    if mod(i, 10000) == 0, fprintf('%d/%d pont kész...\n', i, N_data); end
 end
 
 % --- Adatok kimentése ---
