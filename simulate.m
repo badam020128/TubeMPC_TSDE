@@ -127,10 +127,16 @@ for s = 1:2
         
         x_curr = [e_y; e_psi];
         
-        % Adatmentés
+        % Adatmentés a cikluson belül
         results(s).X(k) = x_dyn_global(1);
         results(s).Y(k) = x_dyn_global(2);
         results(s).e_y(k) = e_y;
+        
+        % --- EZT A 3 SORT ADD HOZZÁ ---
+        results(s).e_psi(k) = e_psi;
+        results(s).d_max(k) = current_d_max; 
+        results(s).u(k) = u_applied;
+        
     end
 end
 
