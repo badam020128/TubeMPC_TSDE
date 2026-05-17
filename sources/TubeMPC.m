@@ -1,8 +1,8 @@
-function u_applied = TubeMPC(x_meas, kappa_horizon, params, tsde_models, use_ai, d_max)
-    % Egységes Tube MPC Szabályozó TSDE (AI) integrációval
+function u_applied = TubeMPC(x_meas, kappa_horizon, params, ai_residual, d_max)
+    % IGAZI TUBE MPC - Tiszta Lineáris Predikció + AI Feedforward
     
     % A x_nom_prev rögzíti a nominális predikciót a lépések között
-    persistent opti vars nn_data K_lqr A_ca B_ca u_prev_val x_nom_prev
+    persistent opti vars K_lqr A_ca B_ca u_prev_val x_nom_prev
     
     import casadi.*
     Np = 15; % Predikciós horizont
@@ -33,28 +33,6 @@ function u_applied = TubeMPC(x_meas, kappa_horizon, params, tsde_models, use_ai,
         K_lqr = DM(-K_lqr_mat);
         rho = max(abs(eig(A - B * K_lqr_mat))); 
         
-        % AI paraméterek betöltése dinamikusan
-        nn_data = struct();
-        if ~isempty(tsde_models) && use_ai == 1
-            nn_data.num_nets = length(tsde_models.ensemble_stage1);
-            
-            nn_data.in_off = DM(tsde_models.in_settings.xoffset);
-            nn_data.in_g   = DM(tsde_models.in_settings.gain);
-            nn_data.in_ymin= DM(tsde_models.in_settings.ymin);
-            nn_data.tar_off= DM(tsde_models.tar_settings.xoffset);
-            nn_data.tar_g  = DM(tsde_models.tar_settings.gain);
-            nn_data.tar_ymin= DM(tsde_models.tar_settings.ymin);
-            
-            for i = 1:nn_data.num_nets
-                nn_data.W1{i} = DM(tsde_models.ensemble_stage1{i}.IW{1,1});
-                nn_data.b1{i} = DM(tsde_models.ensemble_stage1{i}.b{1});
-                nn_data.W2{i} = DM(tsde_models.ensemble_stage1{i}.LW{2,1});
-                nn_data.b2{i} = DM(tsde_models.ensemble_stage1{i}.b{2});
-                nn_data.W3{i} = DM(tsde_models.ensemble_stage1{i}.LW{3,2});
-                nn_data.b3{i} = DM(tsde_models.ensemble_stage1{i}.b{3});
-            end
-        end
-        
         % --- Változók ---
         vars.X = opti.variable(2, Np+1);
         vars.U = opti.variable(1, Np);
@@ -64,44 +42,29 @@ function u_applied = TubeMPC(x_meas, kappa_horizon, params, tsde_models, use_ai,
         vars.x_meas     = opti.parameter(2, 1);
         vars.x_nom_prev = opti.parameter(2, 1); 
         vars.kappa      = opti.parameter(1, Np);
-        vars.p_ai       = opti.parameter(1, 1);
+        vars.p_ai_res   = opti.parameter(2, 1); % <--- ÚJ: Az AI által jósolt fix hiba
         vars.p_dmax     = opti.parameter(1, 1);
         vars.u_prev     = opti.parameter(1, 1); 
         
         % --- Célfüggvény és kényszerek ---
-        Q_mpc = DM(diag([40, 10])); 
-        R_mpc = DM(1.0);
-        R_dU_mpc = DM(200); 
+        % Mivel az AI stabil, visszatérhetünk normális súlyokra:
+        Q_mpc = DM(diag([100, 20])); % Erős sávtartás
+        R_mpc = DM(1.0);             % Finom kormányszög büntetés
+        R_dU_mpc = DM(50);           % Normális kormányszervó
         J = 0;
         
         for k = 1:Np
             x_k = vars.X(:,k); u_k = vars.U(k); kap_k = vars.kappa(k);
             
-            % TISZTA lineáris lépés (a CasADi ezen keresztül tartja stabilan a rendszert)
-            x_lin = A_ca * x_k + B_ca * u_k + [0; -params.v_const * kap_k * params.dt];
+            % --- MEGOLDÁS: A zavarás exponenciális csillapítása a horizonton ---
+            decay_rate = 0.5; % Lépésenként feleződik a jósolt hiba hatása
+            current_ai_res = vars.p_ai_res * (decay_rate^(k-1));
             
-            if ~isempty(tsde_models) && use_ai == 1
-                nn_in = [x_k; u_k; kap_k];
-                in_norm = (nn_in - nn_data.in_off) .* nn_data.in_g + nn_data.in_ymin;
-                res_norm = 0;
-                for i = 1:nn_data.num_nets
-                    a1 = tanh(nn_data.W1{i} * in_norm + nn_data.b1{i});
-                    a2 = tanh(nn_data.W2{i} * a1      + nn_data.b2{i});
-                    res_norm = res_norm + (nn_data.W3{i} * a2 + nn_data.b3{i});
-                end
-                res_norm = res_norm / nn_data.num_nets;
-                residual = (res_norm - nn_data.tar_ymin) ./ nn_data.tar_g + nn_data.tar_off;
-                
-                % STABILITÁSI JAVÍTÁS 1: Az AI maradékhiba csillapítása. 
-                % Csak 20%-os súllyal engedjük módosítani a predikciót lépésenként.
-                ai_weight = 0.8; 
-            else
-                residual = [0; 0];
-                ai_weight = 0.0;
-            end
+            % TISZTA lineáris lépés + csillapodó zavarás
+            x_lin = A_ca * x_k + B_ca * u_k + [0; -params.v_const * kap_k * params.dt] + current_ai_res;
             
-            % Dinamikai kényszer a csillapított AI hálóval
-            opti.subject_to(vars.X(:,k+1) == x_lin + vars.p_ai * ai_weight * residual);
+            % Dinamikai kényszer
+            opti.subject_to(vars.X(:,k+1) == x_lin);
             
             % Cső (Tube) kényszerek
             opti.subject_to(vars.S(k+1) == rho^2 * vars.S(k) + vars.p_dmax^2);
@@ -146,15 +109,13 @@ function u_applied = TubeMPC(x_meas, kappa_horizon, params, tsde_models, use_ai,
     % =====================================================================
     opti.set_value(vars.x_meas, x_meas(:)); 
     
-    % STABILITÁSI JAVÍTÁS 2: Low-pass filter a kezdeti nominális állapoton.
-    % Ezzel elkerülhető, hogy a valós mérési zaj és az előző lépés nominális értéke 
-    % azonnali tüskéket (chattering) okozzon.
-    alpha_nom = 0.8; % 80% bizalom a modellben, 20% a mérésben
+    % Filter
+    alpha_nom = 0.8; 
     x_nom_blended = alpha_nom * x_nom_prev(:) + (1 - alpha_nom) * x_meas(:);
     
     opti.set_value(vars.x_nom_prev, x_nom_blended); 
     opti.set_value(vars.kappa,  kappa_horizon(:)'); 
-    opti.set_value(vars.p_ai,   use_ai);
+    opti.set_value(vars.p_ai_res, ai_residual(:)); % <--- Átadjuk a háló jóslatát
     opti.set_value(vars.p_dmax, d_max);
     opti.set_value(vars.u_prev, u_prev_val);
     
@@ -164,19 +125,16 @@ function u_applied = TubeMPC(x_meas, kappa_horizon, params, tsde_models, use_ai,
         u_opt = sol.value(vars.U(1));
         x_nom_opt = sol.value(vars.X(:,1));
         
-        % A valódi Tube MPC Feedback törvénye
         u_applied = u_opt + full(K_lqr * (x_meas(:) - x_nom_opt(:)));
         
-        % Warm start a következő lépéshez
+        % Warm start
         opti.set_initial(vars.U, [sol.value(vars.U(2:end)), 0]);
         opti.set_initial(vars.X, [sol.value(vars.X(:, 2:end)), sol.value(vars.X(:, end))]);
         opti.set_initial(vars.S, [sol.value(vars.S(2:end)), sol.value(vars.S(end))]);
         
-        % Frissítjük a következő iterációnak a kiinduló nominális állapotot
         x_nom_prev = sol.value(vars.X(:,2));
         
     catch
-        % Ha az IPOPT elszáll (pl. túlságosan rángat a modell), kitakarítjuk a memóriáját
         opti.set_initial(vars.U, zeros(1, Np));
         opti.set_initial(vars.X, repmat(x_meas(:), 1, Np+1));
         opti.set_initial(vars.S, 1e-4 * ones(1, Np+1));
