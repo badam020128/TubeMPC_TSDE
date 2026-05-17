@@ -42,8 +42,9 @@ scenarios = {
 };
 
 % --- BÁZIS LQR A HÁLÓZAT BEMENETÉNEK STABILIZÁLÁSÁHOZ ---
+% Pontosan a data_gather.m-ben használt súlyokkal!
 [A_nom, B_nom, ~] = nominal_model(params.v_const, params.L, params.dt);
-[K_mat, ~, ~] = dlqr(A_nom, B_nom, diag([10, 5]), 1);
+[K_mat, ~, ~] = dlqr(A_nom, B_nom, diag([10, 5]), 1); 
 K_lqr_base = -K_mat;
 
 for s = 1:2
@@ -67,15 +68,13 @@ for s = 1:2
         kappa_seq = kappa_ref(curr_idx : curr_idx+Np-1); 
         
         % ==============================================================
-        % TISZTÍTOTT TSDE HÁLÓZAT KIÉRTÉKELÉSE (Hurok megszakítása)
+        % TISZTÍTOTT ÉS SZÉTVÁLASZTOTT TSDE HÁLÓZAT KIÉRTÉKELÉSE
         % ==============================================================
         if scenarios{s}.use_ai == 1
             
-            % Stabil bázis kormányszög generálása az AI számára (Feedforward + LQR)
-            u_baseline = params.L * kappa_seq(1) + full(K_lqr_base * x_curr);
-            u_baseline = max(-0.5, min(0.5, u_baseline)); % Szaturáció
+            % TISZTA FEEDFORWARD: Az AI nem tud az MPC rángatózásáról!
+            u_baseline = params.L * kappa_seq(1); 
             
-            % A háló a nyugodt bázist kapja, nem a rángatózó MPC kimenetet!
             nn_in = [x_curr; u_baseline; kappa_seq(1)];
             in_norm = mapminmax('apply', nn_in, tsde_models.in_settings);
             
@@ -86,16 +85,16 @@ for s = 1:2
                 s2_preds(:, net_i) = tsde_models.ensemble_stage2{net_i}(in_norm);
             end
             
-            % Stage 1: Maradék hiba (Normalizált -> Fizikai)
+            % Stage 1: Nyers maradék hiba (Normalizált -> Fizikai)
             res_norm = mean(s1_preds, 2);
-            residual_pred = mapminmax('reverse', res_norm, tsde_models.tar_settings);
+            raw_residual = mapminmax('reverse', res_norm, tsde_models.tar_settings);
             
-            % Stage 2: Bizonytalanság (Dinamikus d_max)
+            % TELEPORTÁLÁS ELLENI FIX: Csak a kúszásszöget adjuk át kompenzálásra!
+            final_ai_residual = [0; raw_residual(2)];
+            
+            % Stage 2: Bizonytalanság 
             unc_norm = mean(s2_preds, 2) + std(s1_preds, 0, 2);
             uncertainty = unc_norm ./ tsde_models.tar_settings.gain;
-            
-            % Nincs szükség aktivációs kapura és aluláteresztő szűrőre!
-            final_ai_residual = residual_pred;
             current_d_max = max(uncertainty); 
         else
             final_ai_residual = [0; 0];

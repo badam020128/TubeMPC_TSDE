@@ -55,14 +55,11 @@ function u_applied = TubeMPC(x_meas, kappa_horizon, params, ai_residual, d_max)
         for k = 1:Np
             x_k = vars.X(:,k); u_k = vars.U(k); kap_k = vars.kappa(k);
             
-            % CSAK AZ ELSŐ LÉPÉSBEN alkalmazzuk az AI maradék hibáját!
-            if k == 1
-                current_ai_res = vars.p_ai_res;
-            else
-                current_ai_res = [0; 0];
-            end
+            % MEGOLDÁS: A kanyarcsúszás egy folyamatos fizikai jelenség!
+            % Minden predikciós lépésben alkalmazni kell a várható hibát.
+            current_ai_res = vars.p_ai_res;
             
-            % TISZTA lineáris lépés + első lépéses zavarás
+            % TISZTA lineáris lépés + folyamatos dinamikai zavarás
             x_lin = A_ca * x_k + B_ca * u_k + [0; -params.v_const * kap_k * params.dt] + current_ai_res;
             
             % Dinamikai kényszer
