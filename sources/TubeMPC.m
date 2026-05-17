@@ -47,20 +47,22 @@ function u_applied = TubeMPC(x_meas, kappa_horizon, params, ai_residual, d_max)
         vars.u_prev     = opti.parameter(1, 1); 
         
         % --- Célfüggvény és kényszerek ---
-        % Mivel az AI stabil, visszatérhetünk normális súlyokra:
         Q_mpc = DM(diag([50, 20])); % Erős sávtartás
         R_mpc = DM(20);             % Finom kormányszög büntetés
-        R_dU_mpc = DM(200);           % Normális kormányszervó
+        R_dU_mpc = DM(200);         % Normális kormányszervó
         J = 0;
         
         for k = 1:Np
             x_k = vars.X(:,k); u_k = vars.U(k); kap_k = vars.kappa(k);
             
-            % --- MEGOLDÁS: A zavarás exponenciális csillapítása a horizonton ---
-            decay_rate = 0.5; % Lépésenként feleződik a jósolt hiba hatása
-            current_ai_res = vars.p_ai_res * (decay_rate^(k-1));
+            % CSAK AZ ELSŐ LÉPÉSBEN alkalmazzuk az AI maradék hibáját!
+            if k == 1
+                current_ai_res = vars.p_ai_res;
+            else
+                current_ai_res = [0; 0];
+            end
             
-            % TISZTA lineáris lépés + csillapodó zavarás
+            % TISZTA lineáris lépés + első lépéses zavarás
             x_lin = A_ca * x_k + B_ca * u_k + [0; -params.v_const * kap_k * params.dt] + current_ai_res;
             
             % Dinamikai kényszer
@@ -109,13 +111,12 @@ function u_applied = TubeMPC(x_meas, kappa_horizon, params, ai_residual, d_max)
     % =====================================================================
     opti.set_value(vars.x_meas, x_meas(:)); 
     
-    % Filter
-    alpha_nom = 0.8; 
-    x_nom_blended = alpha_nom * x_nom_prev(:) + (1 - alpha_nom) * x_meas(:);
+    % Töröljük a hibrid blendinget! A mért állapotból (x_meas) indítjuk a horizontot, 
+    % így az AI feedforward pontosan arra fog hatni, ahol az autó ÉPPEN van.
+    opti.set_value(vars.x_nom_prev, x_meas(:)); 
     
-    opti.set_value(vars.x_nom_prev, x_nom_blended); 
     opti.set_value(vars.kappa,  kappa_horizon(:)'); 
-    opti.set_value(vars.p_ai_res, ai_residual(:)); % <--- Átadjuk a háló jóslatát
+    opti.set_value(vars.p_ai_res, ai_residual(:)); 
     opti.set_value(vars.p_dmax, d_max);
     opti.set_value(vars.u_prev, u_prev_val);
     

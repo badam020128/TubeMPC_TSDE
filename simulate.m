@@ -41,6 +41,11 @@ scenarios = {
     struct('name', 'AI Tube MPC', 'use_ai', 1, 'd_max', 0.03)
 };
 
+% --- BÁZIS LQR A HÁLÓZAT BEMENETÉNEK STABILIZÁLÁSÁHOZ ---
+[A_nom, B_nom, ~] = nominal_model(params.v_const, params.L, params.dt);
+[K_mat, ~, ~] = dlqr(A_nom, B_nom, diag([10, 5]), 1);
+K_lqr_base = -K_mat;
+
 for s = 1:2
     fprintf('\n--- %s Szimuláció indul ---\n', scenarios{s}.name);
     clear TubeMPC; 
@@ -48,8 +53,7 @@ for s = 1:2
     x_curr = [0; 0];
     x_dyn_global = [x_ref(1); y_ref(1); psi_ref(1); params.v_const; 0; 0];
     curr_idx = 1;
-    u_prev_sim = 0; % Kormányállás nyilvántartása az AI bemenethez
-    ai_residual_filtered = [0; 0];
+    u_prev_sim = 0; % Kormányállás nyilvántartása
 
     for k = 1:N_sim
         search_window_end = min(curr_idx + 50, length(x_ref) - Np);
@@ -63,16 +67,16 @@ for s = 1:2
         kappa_seq = kappa_ref(curr_idx : curr_idx+Np-1); 
         
         % ==============================================================
-        % ÚJ RÉSZ: TSDE HÁLÓZAT KIÉRTÉKELÉSE A CASADI-N KÍVÜL!
-        % ==============================================================
-        % ==============================================================
-        % TSDE HÁLÓZAT KIÉRTÉKELÉSE (PING-PONG ELLENI VÉDELEMMEL)
+        % TISZTÍTOTT TSDE HÁLÓZAT KIÉRTÉKELÉSE (Hurok megszakítása)
         % ==============================================================
         if scenarios{s}.use_ai == 1
-            % --- JAVÍTÁS 1: Sima kormányszög használata ---
-            % Nem a rángatózó u_prev-et adjuk meg, hanem az ideális kanyarodási szöget
-            u_steady_state = params.L * kappa_seq(1); 
-            nn_in = [x_curr; u_steady_state; kappa_seq(1)];
+            
+            % Stabil bázis kormányszög generálása az AI számára (Feedforward + LQR)
+            u_baseline = params.L * kappa_seq(1) + full(K_lqr_base * x_curr);
+            u_baseline = max(-0.5, min(0.5, u_baseline)); % Szaturáció
+            
+            % A háló a nyugodt bázist kapja, nem a rángatózó MPC kimenetet!
+            nn_in = [x_curr; u_baseline; kappa_seq(1)];
             in_norm = mapminmax('apply', nn_in, tsde_models.in_settings);
             
             s1_preds = zeros(2, tsde_models.num_ensembles);
@@ -90,25 +94,11 @@ for s = 1:2
             unc_norm = mean(s2_preds, 2) + std(s1_preds, 0, 2);
             uncertainty = unc_norm ./ tsde_models.tar_settings.gain;
             
-            % AKTIVÁCIÓS KAPU
-            severity = x_curr(1)^2 + x_curr(2)^2 + u_steady_state^2 + kappa_seq(1)^2;
-            activation_factor = 1.0 - exp(-50.0 * severity);
-            
-            ai_weight = 1.0 * activation_factor; 
-            raw_ai_residual = ai_weight * residual_pred;
-            
-            % --- JAVÍTÁS 2: Erős aluláteresztő szűrő (Low-Pass Filter) ---
-            % Ez akadályozza meg, hogy az AI magas frekvencián tudjon oszcillálni
-            alpha_filter = 0.6; % 85% ragaszkodás a régihez, 15% az új jóslat
-            ai_residual_filtered = alpha_filter * ai_residual_filtered + (1 - alpha_filter) * raw_ai_residual;
-            
-            final_ai_residual = ai_residual_filtered;
-            
-            % A Stage 2 beállítja a cső biztonsági sávját
+            % Nincs szükség aktivációs kapura és aluláteresztő szűrőre!
+            final_ai_residual = residual_pred;
             current_d_max = max(uncertainty); 
         else
             final_ai_residual = [0; 0];
-            ai_residual_filtered = [0; 0]; % Reseteljük a szűrőt
             current_d_max = scenarios{s}.d_max; 
         end
         
@@ -131,8 +121,6 @@ for s = 1:2
         results(s).X(k) = x_dyn_global(1);
         results(s).Y(k) = x_dyn_global(2);
         results(s).e_y(k) = e_y;
-        
-        % --- EZT A 3 SORT ADD HOZZÁ ---
         results(s).e_psi(k) = e_psi;
         results(s).d_max(k) = current_d_max; 
         results(s).u(k) = u_applied;
